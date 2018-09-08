@@ -7,12 +7,18 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
 
 import dalvik.system.DexFile;
+
+import static de.robv.android.xposed.XposedBridge.log;
 
 /**
  * Created by xudshen@hotmail.com on 14/11/13.
@@ -43,9 +49,8 @@ class MultiDexHelper {
      * @param context the application context
      * @return all the dex path
      * @throws PackageManager.NameNotFoundException
-     * @throws IOException
      */
-    private static List<String> getSourcePaths(Context context) throws PackageManager.NameNotFoundException, IOException {
+    private static List<String> getSourcePaths(Context context) throws PackageManager.NameNotFoundException {
         ApplicationInfo applicationInfo = context.getPackageManager().getApplicationInfo(context.getPackageName(), 0);
         File sourceApk = new File(applicationInfo.sourceDir);
         File dexDir = new File(applicationInfo.dataDir, SECONDARY_FOLDER_NAME);
@@ -66,7 +71,7 @@ class MultiDexHelper {
                 sourcePaths.add(extractedFile.getAbsolutePath());
                 //we ignore the verify zip part
             } else {
-                throw new IOException("Missing extracted secondary dex file '" +
+                log("Missing extracted secondary dex file '" +
                         extractedFile.getPath() + "'");
             }
         }
@@ -80,10 +85,29 @@ class MultiDexHelper {
      * @param context the application context
      * @return all the classes name
      * @throws PackageManager.NameNotFoundException
-     * @throws IOException
      */
-    static List<String> getAllClasses(Context context) throws PackageManager.NameNotFoundException, IOException {
+    static List<String> getAllClasses(Context context) throws PackageManager.NameNotFoundException {
+        // read class list from cache
+        long lastUpdateTime = context.getPackageManager().getPackageInfo(CloudMusicPackage.PACKAGE_NAME, 0).lastUpdateTime;
+        File classesFile = new File(context.getCacheDir(), "ClassList.dat");
+        if (classesFile.exists() && classesFile.canRead()) {
+            try {
+                ObjectInputStream in = new ObjectInputStream(new FileInputStream(classesFile));
+                long lastUpdateTimeFromFile = in.readLong();
+                if (lastUpdateTime == lastUpdateTimeFromFile) {
+                    //noinspection unchecked
+                    return (List<String>) in.readObject();
+                }
+            } catch (IOException e) {
+                log(e);
+            } catch (ClassNotFoundException e) {
+                log(e);
+            }
+        }
+
+
         List<String> classNames = new ArrayList<>();
+        boolean hasException = false;
         for (String path : getSourcePaths(context)) {
             try {
                 DexFile dexfile;
@@ -99,13 +123,29 @@ class MultiDexHelper {
                 while (dexEntries.hasMoreElements()) {
                     classNames.add(dexEntries.nextElement());
                 }
-                if (pathTmp != null)
+                if (pathTmp != null) {
                     Utility.deleteFile(new File(pathTmp));
-            } catch (IOException e) {
-                throw new IOException("Error at loading dex file '" +
+                }
+            } catch (Throwable t) {
+                hasException = true;
+                log("Error at loading dex file '" +
                         path + "'");
             }
         }
+
+        // write class list cache
+        if (!hasException) {
+            try {
+                ObjectOutputStream out = new ObjectOutputStream(new FileOutputStream(classesFile));
+                out.writeLong(lastUpdateTime);
+                out.writeObject(classNames);
+                out.flush();
+                out.close();
+            } catch (Throwable t) {
+                log(t);
+            }
+        }
+
         return classNames;
     }
 }

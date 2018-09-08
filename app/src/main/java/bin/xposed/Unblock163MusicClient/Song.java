@@ -5,16 +5,14 @@ import org.json.JSONObject;
 
 import java.util.Locale;
 
-import de.robv.android.xposed.XposedBridge;
-
 import static bin.xposed.Unblock163MusicClient.Utility.optString;
+import static de.robv.android.xposed.XposedBridge.log;
 
 class Song {
     long id;
     int code;
     int br;
     int fee;
-    float gain;
     String md5;
     int payed;
     long size;
@@ -26,6 +24,7 @@ class Song {
     String matchedSongName;
     String matchedArtistName;
     boolean matchedDuration;
+    Boolean accessible;
 
     static Song parseFromOther(JSONObject songJson) {
         Song song = new Song();
@@ -33,7 +32,6 @@ class Song {
         song.code = songJson.optInt("code");
         song.br = songJson.optInt("br");
         song.fee = songJson.optInt("fee");
-        song.gain = (float) songJson.optDouble("gain");
         song.md5 = optString(songJson, "md5");
         song.payed = songJson.optInt("payed");
         song.size = songJson.optLong("size");
@@ -50,7 +48,6 @@ class Song {
         if (fid > 0) {
             song.id = id;
             song.br = br;
-            song.gain = (float) songJson.optDouble("vd");
             song.md5 = String.format(Locale.getDefault(), "%032d", fid);
             song.size = songJson.optLong("size");
             song.type = "mp3";
@@ -58,6 +55,26 @@ class Song {
             return song;
         }
         return null;
+    }
+
+    static Song getPreferSong(Song... songs) {
+        Song preferSong = null;
+
+        for (Song song : songs) {
+            if (song == null) {
+                continue;
+            }
+
+            if (preferSong == null) {
+                preferSong = song;
+                continue;
+            }
+
+            if (song.getPrefer() > preferSong.getPrefer()) {
+                preferSong = song;
+            }
+        }
+        return preferSong;
     }
 
     void parseMatchInfo(JSONObject songJson) {
@@ -68,32 +85,33 @@ class Song {
     }
 
     boolean checkAccessible() {
+        if (accessible != null) {
+            return accessible;
+        }
+
+        accessible = false;
         if (url != null) {
             try {
-                String tmpUrl = url;
-                Http http = Http.headByGet(tmpUrl);
-                int responseCode = http.getResponseCode();
-                // manually handle redirection
-                while (responseCode == 301 || responseCode == 302) {
-                    tmpUrl = http.getRedirectLocation();
-                    http = Http.headByGet(tmpUrl);
-                    responseCode = http.getResponseCode();
-                }
-                if (responseCode >= 200 && responseCode < 400) {
-                    size = http.getFileSize(); // re-calc music size for 3rd party url
-                    url = tmpUrl;
-                    return true;
+                Http h = Http.headByGet(url, false);
+                if (h.getResponseCode() == 200 || h.getResponseCode() == 206) {
+                    url = h.getFinalLocation();
+                    size = h.getContentLength(); // re-calc music size for 3rd party url
+                    accessible = true;
                 }
             } catch (Throwable t) {
-                XposedBridge.log(id + "\n" + br + "\n" + url);
-                XposedBridge.log(t);
+                log(id + "\n" + br + "\n" + url);
+                log(t);
             }
         }
-        return false;
+        return accessible;
     }
 
-    boolean isMatchedSong() {
+    boolean is3rdPartySong() {
         return matchedPlatform != null;
+    }
+
+    private boolean is3rdMatchedDuration() {
+        return matchedDuration;
     }
 
     JSONObject getMatchedJson() throws JSONException {
@@ -101,5 +119,21 @@ class Song {
                 .put("matchedPlatform", matchedPlatform)
                 .put("matchedSongName", matchedSongName)
                 .put("matchedArtistName", matchedArtistName);
+    }
+
+    int getPrefer() {
+        if (url == null || !checkAccessible()) {
+            return 0;
+        }
+
+        int prefer = br;
+        if (is3rdPartySong()) {
+            prefer--;
+            if (!is3rdMatchedDuration()) {
+                prefer = 1;
+            }
+        }
+
+        return prefer;
     }
 }

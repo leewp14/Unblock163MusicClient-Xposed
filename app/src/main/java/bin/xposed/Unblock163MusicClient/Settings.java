@@ -4,7 +4,9 @@ import java.lang.ref.WeakReference;
 
 import de.robv.android.xposed.XSharedPreferences;
 
-class Settings {
+public class Settings {
+    private static String chinaIP;
+
     private static WeakReference<XSharedPreferences> xSharedPreferences = new WeakReference<>(null);
 
     private static XSharedPreferences getModuleSharedPreferences() {
@@ -20,15 +22,19 @@ class Settings {
     }
 
 
-    static boolean isOverseaModeEnabled() {
+    public static boolean isUnblockEnabled() {
+        return getModuleSharedPreferences().getBoolean("UNBLOCK", false);
+    }
+
+    public static boolean isOverseaModeEnabled() {
         return getModuleSharedPreferences().getBoolean("OVERSEA_MODE", false);
     }
 
-    static boolean isConfirmDislikeEnabled() {
+    public static boolean isConfirmDislikeEnabled() {
         return getModuleSharedPreferences().getBoolean("DISLIKE_CONFIRM", false);
     }
 
-    static boolean isPreventGray() {
+    public static boolean isPreventGrayEnabled() {
         return getModuleSharedPreferences().getBoolean("PREVENT_GRAY", false);
     }
 
@@ -36,4 +42,15 @@ class Settings {
         return "219.141.140.10";
     }
 
+
+    public static String getChinaIP() {
+        if (chinaIP == null) {
+            chinaIP = String.format("%s.%s.%s.%s",
+                    111,
+                    Utility.randInt(1, 63),
+                    Utility.randInt(1, 255),
+                    Utility.randInt(1, 254));
+        }
+        return chinaIP;
+    }
 }

@@ -6,11 +6,13 @@ jdk:
 
 android:
   components:
-    # https://github.com/travis-ci/travis-ci/issues/6040#issuecomment-219367943
     - tools
-    - tools
-    - build-tools-26.0.0
-    - android-26
+    - platform-tools
+    - build-tools-27.0.3
+    - android-27
+
+before_install:
+  - yes | sdkmanager "platforms;android-27"
 
 script:
   - if [[ "${TRAVIS_PULL_REQUEST}" = "false" ]]; then
@@ -23,8 +25,9 @@ script:
 
 
 before_deploy:
-  - cp app/build/outputs/apk/*-release.apk .
-  - export APK_PATH=$(ls *-release.apk)
+  - cp app/build/outputs/apk/release/*-release.apk ~
+  - export APK_PATH=$(readlink -f ~/*-release.apk)
+  - echo $APK_PATH
 
 deploy:
   provider: releases
@@ -39,4 +42,4 @@ after_deploy:
   - rvm install 2.2.2
   - rvm use 2.2.2
   - gem install fir-cli
-  - fir p $APK_PATH -T $FIR_TOKEN -c "`git cat-file tag $TRAVIS_TAG`"
+  - fir p $APK_PATH -T $FIR_TOKEN -c "$(git log -1 $TRAVIS_TAG)"
